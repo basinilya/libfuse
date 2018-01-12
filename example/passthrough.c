@@ -16,14 +16,14 @@
  *
  * Compile with
  *
- *     gcc -Wall passthrough.c `pkg-config fuse3 --cflags --libs` -o passthrough
+ *     gcc -Wall passthrough.c `pkg-config fuse --cflags --libs` -o passthrough
  *
  * ## Source code ##
  * \include passthrough.c
  */
 
 
-#define FUSE_USE_VERSION 31
+#define FUSE_USE_VERSION 26
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -47,30 +47,14 @@
 #include <sys/xattr.h>
 #endif
 
-static void *xmp_init(struct fuse_conn_info *conn,
-		      struct fuse_config *cfg)
+static void *xmp_init(struct fuse_conn_info *conn)
 {
 	(void) conn;
-	cfg->use_ino = 1;
-
-	/* Pick up changes from lower filesystem right away. This is
-	   also necessary for better hardlink support. When the kernel
-	   calls the unlink() handler, it does not know the inode of
-	   the to-be-removed entry and can therefore not invalidate
-	   the cache of the associated inode - resulting in an
-	   incorrect st_nlink value being reported for any remaining
-	   hardlinks to this inode. */
-	cfg->entry_timeout = 0;
-	cfg->attr_timeout = 0;
-	cfg->negative_timeout = 0;
-
 	return NULL;
 }
 
-static int xmp_getattr(const char *path, struct stat *stbuf,
-		       struct fuse_file_info *fi)
+static int xmp_getattr(const char *path, struct stat *stbuf)
 {
-	(void) fi;
 	int res;
 
 	res = lstat(path, stbuf);
@@ -105,15 +89,13 @@ static int xmp_readlink(const char *path, char *buf, size_t size)
 
 
 static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-		       off_t offset, struct fuse_file_info *fi,
-		       enum fuse_readdir_flags flags)
+		       off_t offset, struct fuse_file_info *fi)
 {
 	DIR *dp;
 	struct dirent *de;
 
 	(void) offset;
 	(void) fi;
-	(void) flags;
 
 	dp = opendir(path);
 	if (dp == NULL)
@@ -124,7 +106,7 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		memset(&st, 0, sizeof(st));
 		st.st_ino = de->d_ino;
 		st.st_mode = de->d_type << 12;
-		if (filler(buf, de->d_name, &st, 0, 0))
+		if (filler(buf, de->d_name, &st, 0))
 			break;
 	}
 
@@ -196,12 +178,9 @@ static int xmp_symlink(const char *from, const char *to)
 	return 0;
 }
 
-static int xmp_rename(const char *from, const char *to, unsigned int flags)
+static int xmp_rename(const char *from, const char *to)
 {
 	int res;
-
-	if (flags)
-		return -EINVAL;
 
 	res = rename(from, to);
 	if (res == -1)
@@ -221,10 +200,8 @@ static int xmp_link(const char *from, const char *to)
 	return 0;
 }
 
-static int xmp_chmod(const char *path, mode_t mode,
-		     struct fuse_file_info *fi)
+static int xmp_chmod(const char *path, mode_t mode)
 {
-	(void) fi;
 	int res;
 
 	res = chmod(path, mode);
@@ -234,10 +211,8 @@ static int xmp_chmod(const char *path, mode_t mode,
 	return 0;
 }
 
-static int xmp_chown(const char *path, uid_t uid, gid_t gid,
-		     struct fuse_file_info *fi)
+static int xmp_chown(const char *path, uid_t uid, gid_t gid)
 {
-	(void) fi;
 	int res;
 
 	res = lchown(path, uid, gid);
@@ -247,15 +222,11 @@ static int xmp_chown(const char *path, uid_t uid, gid_t gid,
 	return 0;
 }
 
-static int xmp_truncate(const char *path, off_t size,
-			struct fuse_file_info *fi)
+static int xmp_truncate(const char *path, off_t size)
 {
 	int res;
 
-	if (fi != NULL)
-		res = ftruncate(fi->fh, size);
-	else
-		res = truncate(path, size);
+	res = truncate(path, size);
 	if (res == -1)
 		return -errno;
 
@@ -263,10 +234,8 @@ static int xmp_truncate(const char *path, off_t size,
 }
 
 #ifdef HAVE_UTIMENSAT
-static int xmp_utimens(const char *path, const struct timespec ts[2],
-		       struct fuse_file_info *fi)
+static int xmp_utimens(const char *path, const struct timespec ts[2])
 {
-	(void) fi;
 	int res;
 
 	/* don't use utime/utimes since they follow symlinks */
